@@ -17,8 +17,7 @@ def download_file(url: str, out_path: Path, chunk_size: int = 1024 * 1024) -> No
         r.raise_for_status()
         with open(out_path, "wb") as f:
             for chunk in r.iter_content(chunk_size=chunk_size):
-                if chunk:
-                    f.write(chunk)
+                f.write(chunk)
 
 
 def unzip(zip_path: Path, out_dir: Path) -> None:

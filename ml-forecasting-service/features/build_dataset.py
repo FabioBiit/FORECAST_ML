@@ -13,7 +13,7 @@ def main() -> None:
     if not RAW_PATH.exists():
         raise FileNotFoundError(f"Raw file not found: {RAW_PATH}. Run data_ingestion/fetch_data.py first.")
 
-    # Lazy scan: veloce e memory-friendly
+    # Lazy scan for memory efficiency
     df_energy = pl.scan_csv(
         RAW_PATH,
         separator=";",
@@ -21,7 +21,7 @@ def main() -> None:
         try_parse_dates=False,
     )
 
-    # Costruisco timestamp (Date + Time) e cast numerici
+    # Parse datetime from Date + Time columns
     df_energy = (
         df_energy.with_columns(
             pl.concat_str([pl.col("Date"), pl.lit(" "), pl.col("Time")]).alias("dt_str")
@@ -42,9 +42,10 @@ def main() -> None:
         "Sub_metering_3",
     ]
 
-    df_energy = df_energy.with_columns([pl.col(c).cast(pl.Float64, strict=False).alias(c) for c in numeric_cols])
+    cast_exprs = [pl.col(c).cast(pl.Float64, strict=False) for c in numeric_cols]
+    df_energy = df_energy.with_columns(cast_exprs)
 
-    # Target: Global_active_power (kW) -> media oraria
+    # Aggregate target (Global_active_power) to hourly mean
     df_hourly = (
         df_energy.select(["dt", "Global_active_power"])
         .with_columns(pl.col("Global_active_power").fill_null(pl.col("Global_active_power").median()).alias("Global_active_power"))
@@ -55,7 +56,8 @@ def main() -> None:
     )
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df_final = df_hourly.collect() # engine="streaming" SE I DATASET SONO MOLTO GRANDI, ALTRIMENTI COLLECT () E CARICA TUTTO IN MEMORIA
+    # Collect all data in memory. For very large datasets, use collect(streaming=True)
+    df_final = df_hourly.collect()
     df_final.write_parquet(OUT_PATH)
     print(f"[features] Saved hourly dataset: {OUT_PATH} | rows={df_final.height} | from={df_final['dt'][0]} to={df_final['dt'][-1]}")
 

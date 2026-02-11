@@ -6,8 +6,9 @@ import joblib
 import numpy as np
 import polars as pl
 import mlflow
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 from xgboost import XGBRegressor
+
+from .utils import SplitConfig, metrics, time_split
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -17,58 +18,28 @@ MODEL_PATH = MODEL_DIR/"xgb_power_h24.joblib"
 
 
 @dataclass(frozen=True)
-class SplitConfig:
-    train_frac: float = 0.70
-    val_frac: float = 0.15
-    test_frac: float = 0.15
-
-
-@dataclass(frozen=True)
 class FeatConfig:
     horizon: int = 24
     lags: tuple[int, ...] = (24, 48, 72, 168)  # 1d,2d,3d,1w
     rolling_windows: tuple[int, ...] = (24, 168)  # 1d,1w
 
 
-def time_split(df: pl.DataFrame, cfg: SplitConfig) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    n = df.height
-    n_train = int(n * cfg.train_frac)
-    n_val = int(n * cfg.val_frac)
-
-    train = df.slice(0, n_train)
-    val = df.slice(n_train, n_val)
-    test = df.slice(n_train + n_val, n - (n_train + n_val))
-    return train, val, test
-
-
-def metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
-    mae = float(mean_absolute_error(y_true, y_pred))
-    rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
-    return {"mae": mae, "rmse": rmse}
-
-
 def build_features(df: pl.DataFrame, fc: FeatConfig) -> pl.DataFrame:
+    """Build lag, rolling, and calendar features for time series forecasting."""
     # Target: y(t + horizon)
     df = df.with_columns(pl.col("y").shift(-fc.horizon).alias("y_target"))
 
-    # Lag features, I lag sono feature che rappresentano i valori passati della serie e permettono al modello di catturare autocorrelazione e stagionalità senza leakage.
+    # Lag features: capture autocorrelation and seasonality
     for lag in fc.lags:
         df = df.with_columns(pl.col("y").shift(lag).alias(f"lag_{lag}"))
 
-    # Rolling stats (basate solo sul passato)
-    # Nota: rolling_mean(w) su serie ordinata è ok; usiamo shift(1) per evitare leak nel timestamp corrente.
+    # Rolling statistics: use shift(1) to prevent data leakage
     for w in fc.rolling_windows:
-        df = df.with_columns(
-            pl.col("y")
-            .shift(1)
-            .rolling_mean(window_size=w, min_periods=w)
-            .alias(f"roll_mean_{w}")
-        ).with_columns(
-            pl.col("y")
-            .shift(1)
-            .rolling_std(window_size=w, min_periods=w)
-            .alias(f"roll_std_{w}")
-        )
+        y_shifted = pl.col("y").shift(1)
+        df = df.with_columns([
+            y_shifted.rolling_mean(window_size=w, min_periods=w).alias(f"roll_mean_{w}"),
+            y_shifted.rolling_std(window_size=w, min_periods=w).alias(f"roll_std_{w}"),
+        ])
 
     # Calendar features
     df = df.with_columns([
@@ -107,12 +78,7 @@ def main() -> None:
     X_val, y_val = to_xy(val_df, feature_cols)
     X_test, y_test = to_xy(test_df, feature_cols)
 
-    # Baseline su stesso dataset (naive 24h): pred = lag_24, perché target = y(t+24)
-    # Quindi y_hat_naive = y(t) => nel nostro feature set corrisponde a lag_24? Attenzione:
-    # Nel frame corrente t, lag_24 = y(t-24). Per forecast 24h ahead, naive classico è y(t+24) ~ y(t).
-    # Quindi serve "current y" come feature; la usiamo come y(t) = lag_? No: qui abbiamo df con y(t) come colonna y.
-    # Creiamo baseline: y_hat_naive = y (val/test).
-
+    # Naive baseline for comparison: y_hat(t+24) = y(t)
     yhat_val_naive = val_df["y"].to_numpy()
     yhat_test_naive = test_df["y"].to_numpy()
 
@@ -127,7 +93,7 @@ def main() -> None:
         colsample_bytree=0.9,
         objective="reg:squarederror",
         random_state=42,
-        n_jobs=0,
+        n_jobs=-1,  # Use all available CPU cores
     )
 
     mlflow.set_experiment("Power_Forecasting_h24")
