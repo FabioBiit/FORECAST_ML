@@ -86,14 +86,14 @@ def main() -> None:
     naive_test = metrics(y_test, yhat_test_naive)
 
     model = XGBRegressor(
-        n_estimators=800,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        objective="reg:squarederror",
-        random_state=42,
-        n_jobs=-1,  # Use all available CPU cores
+        n_estimators=800,               # Numero di alberi (boosting rounds)
+        max_depth=6,                    # Profondità massima di ogni albero
+        learning_rate=0.05,             # Tasso di apprendimento (shrinkage per round)
+        subsample=0.9,                  # Frazione di righe campionate per ogni albero
+        colsample_bytree=0.9,           # Frazione di feature campionate per ogni albero
+        objective="reg:squarederror",   # Funzione di loss: errore quadratico medio
+        random_state=42,                # Seed per riproducibilità
+        n_jobs=-1                       # Usa tutti i core CPU disponibili
     )
 
     mlflow.set_experiment("Power_Forecasting_h24")
