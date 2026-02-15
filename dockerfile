@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# XGBoost su linux spesso richiede libgomp1 (OpenMP)
+# Ultimo comando per pulizia apt cache per ridurre dimensione immagine
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+ && rm -rf /var/lib/apt/lists/* 
+
+# Copio solo ciò che serve per installare deps (caching)
+COPY pyproject.toml /app/pyproject.toml
+
+# Install deps dal pyproject (pip supporta PEP 621)
+RUN pip install --no-cache-dir -U pip \
+ && pip install --no-cache-dir .
+
+# Copio codice e modello
+COPY ml-forecasting-service/api /app/api
+COPY ml-forecasting-service/inference /app/inference
+COPY ml-forecasting-service/models /app/models
+
+EXPOSE 8000
+
+# Healthcheck: chiama /health del container
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()" || exit 1
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

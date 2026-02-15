@@ -11,3 +11,5 @@ REPO_ROOT = Path(__file__).resolve().parents[0]
 
 df_parquet = pl.read_parquet(REPO_ROOT/"data"/"processed"/"power_hourly.parquet")
 df_parquet.show(100)
+
+df_parquet.count().show()
