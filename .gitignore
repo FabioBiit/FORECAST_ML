@@ -4,6 +4,7 @@ __pycache__/
 .env
 data/
 mlruns/
-models/
 *.log
 .ipynb_checkpoints/
+state/
+*.db

@@ -1,5 +1,5 @@
 param(
-  [string]$Image = "power-forecast-api:0.3"
+  [string]$Image = "power-forecast-api:latest"
 )
 
 New-Item -ItemType Directory -Force -Path "state" | Out-Null
