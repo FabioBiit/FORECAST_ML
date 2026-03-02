@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir -U pip \
 # Copio codice e modello
 COPY ml-forecasting-service/api /app/api
 COPY ml-forecasting-service/inference /app/inference
+COPY ml-forecasting-service/monitoring /app/monitoring
 COPY ml-forecasting-service/models /app/models
 
 EXPOSE 8000
